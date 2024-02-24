@@ -193,8 +193,8 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 				if d.Decode(&v) != nil {
 					log.Fatalf("decode error\n")
 				}
-				cfg.logs[i][m.SnapshotIndex] = v
-				lastApplied = m.SnapshotIndex
+				cfg.logs[i][m.SnapshotSeq] = v
+				lastApplied = m.SnapshotSeq
 			}
 			cfg.mu.Unlock()
 		} else if m.CommandValid && m.CommandIndex > lastApplied {
