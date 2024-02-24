@@ -185,7 +185,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 			//DPrintf("Installsnapshot %v %v\n", m.SnapshotIndex, lastApplied)
 			cfg.mu.Lock()
 			if cfg.rafts[i].CondInstallSnapshot(m.SnapshotTerm,
-				m.SnapshotIndex, m.Snapshot) {
+				m.SnapshotIndex, m.SnapshotSeq, m.Snapshot) {
 				cfg.logs[i] = make(map[int]interface{})
 				r := bytes.NewBuffer(m.Snapshot)
 				d := labgob.NewDecoder(r)
@@ -230,13 +230,11 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 	}
 }
 
-//
 // start or re-start a Raft.
 // if one already exists, "kill" it first.
 // allocate new outgoing port file names, and a new
 // state persister, to isolate previous instance of
 // this server. since we cannot really kill it.
-//
 func (cfg *config) start1(i int, applier func(int, chan ApplyMsg)) {
 	cfg.crash1(i)
 

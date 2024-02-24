@@ -60,21 +60,27 @@ func TestReElection2A(t *testing.T) {
 	leader1 := cfg.checkOneLeader()
 
 	// if the leader disconnects, a new one should be elected.
+	fmt.Printf("disconnect S%d\n", leader1)
 	cfg.disconnect(leader1)
 	cfg.checkOneLeader()
 
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader.
+	fmt.Printf("rejoin S%d\n", leader1)
 	cfg.connect(leader1)
 	leader2 := cfg.checkOneLeader()
 
 	// if there's no quorum, no leader should
 	// be elected.
+	println("no quorum")
+	fmt.Printf("disconnect S%d\n", leader2)
 	cfg.disconnect(leader2)
+	fmt.Printf("disconnect S%d\n", (leader2+1)%servers)
 	cfg.disconnect((leader2 + 1) % servers)
 	time.Sleep(2 * RaftElectionTimeout)
 	cfg.checkNoLeader()
 
+	println("rejoin quorum")
 	// if a quorum arises, it should elect a leader.
 	cfg.connect((leader2 + 1) % servers)
 	cfg.checkOneLeader()
@@ -101,16 +107,22 @@ func TestManyElections2A(t *testing.T) {
 		i1 := rand.Int() % servers
 		i2 := rand.Int() % servers
 		i3 := rand.Int() % servers
+		fmt.Printf("EVENT: disconnect%d\n", i1)
 		cfg.disconnect(i1)
+		fmt.Printf("EVENT: disconnect%d\n", i2)
 		cfg.disconnect(i2)
+		fmt.Printf("EVENT: disconnect%d\n", i3)
 		cfg.disconnect(i3)
 
 		// either the current leader should still be alive,
 		// or the remaining four should elect a new one.
 		cfg.checkOneLeader()
 
+		fmt.Printf("EVENT: connect%d\n", i1)
 		cfg.connect(i1)
+		fmt.Printf("EVENT: connect%d\n", i2)
 		cfg.connect(i2)
+		fmt.Printf("EVENT: connect%d\n", i3)
 		cfg.connect(i3)
 	}
 
@@ -142,10 +154,8 @@ func TestBasicAgree2B(t *testing.T) {
 	cfg.end()
 }
 
-//
 // check, based on counting bytes of RPCs, that
 // each command is sent to each peer just once.
-//
 func TestRPCBytes2B(t *testing.T) {
 	servers := 3
 	cfg := make_config(t, servers, false, false)
@@ -188,6 +198,8 @@ func TestFailAgree2B(t *testing.T) {
 
 	// disconnect one follower from the network.
 	leader := cfg.checkOneLeader()
+	i := (leader + 1) % servers
+	fmt.Printf("disconnect one follower %d from leader %d\n", i, leader)
 	cfg.disconnect((leader + 1) % servers)
 
 	// the leader and remaining follower should be
@@ -199,11 +211,13 @@ func TestFailAgree2B(t *testing.T) {
 	cfg.one(105, servers-1, false)
 
 	// re-connect
+	fmt.Printf("reconnect %d\n", i)
 	cfg.connect((leader + 1) % servers)
 
 	// the full set of servers should preserve
 	// previous agreements, and be able to agree
 	// on new commands.
+	println("new commands")
 	cfg.one(106, servers, true)
 	time.Sleep(RaftElectionTimeout)
 	cfg.one(107, servers, true)
@@ -374,6 +388,7 @@ func TestRejoin2B(t *testing.T) {
 
 	// leader network failure
 	leader1 := cfg.checkOneLeader()
+	fmt.Printf("leader1 disconnect S%d\n", leader1)
 	cfg.disconnect(leader1)
 
 	// make old leader try to agree on some entries
@@ -386,14 +401,17 @@ func TestRejoin2B(t *testing.T) {
 
 	// new leader network failure
 	leader2 := cfg.checkOneLeader()
+	fmt.Printf("leader2 disconnect S%d\n", leader2)
 	cfg.disconnect(leader2)
 
 	// old leader connected again
+	fmt.Printf("leader1 reconnect S%d\n", leader1)
 	cfg.connect(leader1)
 
 	cfg.one(104, 2, true)
 
 	// all together now
+	fmt.Printf("leader2 reconnect S%d\n", leader2)
 	cfg.connect(leader2)
 
 	cfg.one(105, servers, true)
@@ -408,32 +426,43 @@ func TestBackup2B(t *testing.T) {
 
 	cfg.begin("Test (2B): leader backs up quickly over incorrect follower logs")
 
-	cfg.one(rand.Int(), servers, true)
+	cmd := 100
+	cfg.one(cmd, servers, true)
 
 	// put leader and one follower in a partition
 	leader1 := cfg.checkOneLeader()
+	fmt.Printf("disconnect S%d\n", (leader1+2)%servers)
 	cfg.disconnect((leader1 + 2) % servers)
+	fmt.Printf("disconnect S%d\n", (leader1+3)%servers)
 	cfg.disconnect((leader1 + 3) % servers)
+	fmt.Printf("disconnect S%d\n", (leader1+4)%servers)
 	cfg.disconnect((leader1 + 4) % servers)
 
-	// submit lots of commands that won't commit
+	// submit lots of commands that won't commit: 101-150
 	for i := 0; i < 50; i++ {
-		cfg.rafts[leader1].Start(rand.Int())
+		cmd += 1
+		cfg.rafts[leader1].Start(cmd)
 	}
 
 	time.Sleep(RaftElectionTimeout / 2)
 
+	fmt.Printf("disconnect S%d\n", (leader1+0)%servers)
 	cfg.disconnect((leader1 + 0) % servers)
+	fmt.Printf("disconnect S%d\n", (leader1+1)%servers)
 	cfg.disconnect((leader1 + 1) % servers)
 
 	// allow other partition to recover
+	fmt.Printf("connect S%d\n", (leader1+2)%servers)
 	cfg.connect((leader1 + 2) % servers)
+	fmt.Printf("connect S%d\n", (leader1+3)%servers)
 	cfg.connect((leader1 + 3) % servers)
+	fmt.Printf("connect S%d\n", (leader1+4)%servers)
 	cfg.connect((leader1 + 4) % servers)
 
-	// lots of successful commands to new group.
+	// lots of successful commands to new group: 151-200
 	for i := 0; i < 50; i++ {
-		cfg.one(rand.Int(), 3, true)
+		cmd += 1
+		cfg.one(cmd, 3, true)
 	}
 
 	// now another partitioned leader and one follower
@@ -442,33 +471,42 @@ func TestBackup2B(t *testing.T) {
 	if leader2 == other {
 		other = (leader2 + 1) % servers
 	}
+	fmt.Printf("disconnect S%d\n", other)
 	cfg.disconnect(other)
 
-	// lots more commands that won't commit
+	// lots more commands that won't commit: 201-250
 	for i := 0; i < 50; i++ {
-		cfg.rafts[leader2].Start(rand.Int())
+		cmd += 1
+		cfg.rafts[leader2].Start(cmd)
 	}
 
 	time.Sleep(RaftElectionTimeout / 2)
 
 	// bring original leader back to life,
 	for i := 0; i < servers; i++ {
+		fmt.Printf("disconnect S%d\n", i)
 		cfg.disconnect(i)
 	}
+	fmt.Printf("connect S%d\n", (leader1+0)%servers)
 	cfg.connect((leader1 + 0) % servers)
+	fmt.Printf("connect S%d\n", (leader1+1)%servers)
 	cfg.connect((leader1 + 1) % servers)
+	fmt.Printf("connect S%d\n", other)
 	cfg.connect(other)
 
-	// lots of successful commands to new group.
+	// lots of successful commands to new group: 251-300
 	for i := 0; i < 50; i++ {
-		cfg.one(rand.Int(), 3, true)
+		cmd += 1
+		cfg.one(cmd, 3, true)
 	}
 
-	// now everyone
+	// now everyone: 301
 	for i := 0; i < servers; i++ {
+		fmt.Printf("connect S%d\n", i)
 		cfg.connect(i)
 	}
-	cfg.one(rand.Int(), servers, true)
+	cmd += 1
+	cfg.one(cmd, servers, true)
 
 	cfg.end()
 }
@@ -685,19 +723,27 @@ func TestPersist32C(t *testing.T) {
 	cfg.one(101, 3, true)
 
 	leader := cfg.checkOneLeader()
+	fmt.Printf("disconnect S%d\n", (leader+2)%servers)
 	cfg.disconnect((leader + 2) % servers)
 
 	cfg.one(102, 2, true)
 
+	fmt.Printf("crash1 S%d\n", (leader+0)%servers)
 	cfg.crash1((leader + 0) % servers)
+	fmt.Printf("crash1 S%d\n", (leader+1)%servers)
 	cfg.crash1((leader + 1) % servers)
+	fmt.Printf("connect S%d\n", (leader+2)%servers)
 	cfg.connect((leader + 2) % servers)
+	fmt.Printf("start1 S%d\n", (leader+0)%servers)
 	cfg.start1((leader+0)%servers, cfg.applier)
+	fmt.Printf("connect S%d\n", (leader+0)%servers)
 	cfg.connect((leader + 0) % servers)
 
 	cfg.one(103, 2, true)
 
+	fmt.Printf("start1 S%d\n", (leader+1)%servers)
 	cfg.start1((leader+1)%servers, cfg.applier)
+	fmt.Printf("connect S%d\n", (leader+1)%servers)
 	cfg.connect((leader + 1) % servers)
 
 	cfg.one(104, servers, true)
@@ -705,7 +751,6 @@ func TestPersist32C(t *testing.T) {
 	cfg.end()
 }
 
-//
 // Test the scenarios described in Figure 8 of the extended Raft paper. Each
 // iteration asks a leader, if there is one, to insert a command in the Raft
 // log.  If there is a leader, that leader will fail quickly with a high
@@ -714,7 +759,6 @@ func TestPersist32C(t *testing.T) {
 // alive servers isn't enough to form a majority, perhaps start a new server.
 // The leader in a new term may try to finish replicating log entries that
 // haven't been committed yet.
-//
 func TestFigure82C(t *testing.T) {
 	servers := 5
 	cfg := make_config(t, servers, false, false)
@@ -722,29 +766,38 @@ func TestFigure82C(t *testing.T) {
 
 	cfg.begin("Test (2C): Figure 8")
 
-	cfg.one(rand.Int(), 1, true)
+	cmd := 1
+	cfg.one(cmd, 1, true)
 
 	nup := servers
 	for iters := 0; iters < 1000; iters++ {
 		leader := -1
 		for i := 0; i < servers; i++ {
 			if cfg.rafts[i] != nil {
-				_, _, ok := cfg.rafts[i].Start(rand.Int())
+				cmd += 1 // 2
+				_, _, ok := cfg.rafts[i].Start(cmd)
 				if ok {
 					leader = i
 				}
 			}
 		}
 
+		quickly := false
 		if (rand.Int() % 1000) < 100 {
 			ms := rand.Int63() % (int64(RaftElectionTimeout/time.Millisecond) / 2)
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 		} else {
+			quickly = true
 			ms := (rand.Int63() % 13)
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 		}
 
 		if leader != -1 {
+			if quickly {
+				fmt.Printf("crash1 S%d quickly (perhaps without committing the command)\n", leader)
+			} else {
+				fmt.Printf("crash1 S%d after a while (most likely committing the command)\n", leader)
+			}
 			cfg.crash1(leader)
 			nup -= 1
 		}
@@ -752,7 +805,10 @@ func TestFigure82C(t *testing.T) {
 		if nup < 3 {
 			s := rand.Int() % servers
 			if cfg.rafts[s] == nil {
+				fmt.Printf("nup=%d < 3, cannot form majority. start a server\n", nup)
+				fmt.Printf("start1 S%d\n", s)
 				cfg.start1(s, cfg.applier)
+				fmt.Printf("connect S%d\n", s)
 				cfg.connect(s)
 				nup += 1
 			}
@@ -766,7 +822,9 @@ func TestFigure82C(t *testing.T) {
 		}
 	}
 
-	cfg.one(rand.Int(), servers, true)
+	cmd += 1
+	fmt.Printf("one %d\n", cmd)
+	cfg.one(cmd, servers, true)
 
 	cfg.end()
 }
@@ -807,7 +865,8 @@ func TestFigure8Unreliable2C(t *testing.T) {
 
 	cfg.begin("Test (2C): Figure 8 (unreliable)")
 
-	cfg.one(rand.Int()%10000, 1, true)
+	cmd := 1
+	cfg.one(cmd, 1, true)
 
 	nup := servers
 	for iters := 0; iters < 1000; iters++ {
@@ -816,21 +875,29 @@ func TestFigure8Unreliable2C(t *testing.T) {
 		}
 		leader := -1
 		for i := 0; i < servers; i++ {
-			_, _, ok := cfg.rafts[i].Start(rand.Int() % 10000)
+			cmd += 1 // 2
+			_, _, ok := cfg.rafts[i].Start(cmd)
 			if ok && cfg.connected[i] {
 				leader = i
 			}
 		}
 
+		quickly := false
 		if (rand.Int() % 1000) < 100 {
 			ms := rand.Int63() % (int64(RaftElectionTimeout/time.Millisecond) / 2)
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 		} else {
+			quickly = true
 			ms := (rand.Int63() % 13)
 			time.Sleep(time.Duration(ms) * time.Millisecond)
 		}
 
 		if leader != -1 && (rand.Int()%1000) < int(RaftElectionTimeout/time.Millisecond)/2 {
+			if quickly {
+				fmt.Printf("disconnect S%d quickly (perhaps without committing the command)\n", leader)
+			} else {
+				fmt.Printf("disconnect S%d after a while (most likely committing the command)\n", leader)
+			}
 			cfg.disconnect(leader)
 			nup -= 1
 		}
@@ -838,6 +905,8 @@ func TestFigure8Unreliable2C(t *testing.T) {
 		if nup < 3 {
 			s := rand.Int() % servers
 			if cfg.connected[s] == false {
+				fmt.Printf("nup=%d < 3, cannot form majority. reconnect a server\n", nup)
+				fmt.Printf("connect S%d\n", s)
 				cfg.connect(s)
 				nup += 1
 			}
@@ -850,7 +919,9 @@ func TestFigure8Unreliable2C(t *testing.T) {
 		}
 	}
 
-	cfg.one(rand.Int()%10000, servers, true)
+	cmd += 1
+	fmt.Printf("one %d\n", cmd)
+	cfg.one(cmd, servers, true)
 
 	cfg.end()
 }
@@ -1018,7 +1089,8 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 
 	cfg.begin(name)
 
-	cfg.one(rand.Int(), servers, true)
+	cmd := 1
+	cfg.one(cmd, servers, true)
 	leader1 := cfg.checkOneLeader()
 
 	for i := 0; i < iters; i++ {
@@ -1030,19 +1102,25 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 		}
 
 		if disconnect {
+			fmt.Printf("disconnect S%d\n", victim)
 			cfg.disconnect(victim)
-			cfg.one(rand.Int(), servers-1, true)
+			cmd += 1
+			cfg.one(cmd, servers-1, true)
 		}
 		if crash {
+			fmt.Printf("crash1 S%d\n", victim)
 			cfg.crash1(victim)
-			cfg.one(rand.Int(), servers-1, true)
+			cmd += 1
+			cfg.one(cmd, servers-1, true)
 		}
 		// send enough to get a snapshot
 		for i := 0; i < SnapShotInterval+1; i++ {
-			cfg.rafts[sender].Start(rand.Int())
+			cmd += 1
+			cfg.rafts[sender].Start(cmd)
 		}
 		// let applier threads catch up with the Start()'s
-		cfg.one(rand.Int(), servers-1, true)
+		cmd += 1
+		cfg.one(cmd, servers-1, true)
 
 		if cfg.LogSize() >= MAXLOGSIZE {
 			cfg.t.Fatalf("Log size too large")
@@ -1050,14 +1128,18 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 		if disconnect {
 			// reconnect a follower, who maybe behind and
 			// needs to rceive a snapshot to catch up.
+			fmt.Printf("connect S%d\n", victim)
 			cfg.connect(victim)
-			cfg.one(rand.Int(), servers, true)
+			cmd += 1
+			cfg.one(cmd, servers, true)
 			leader1 = cfg.checkOneLeader()
 		}
 		if crash {
+			fmt.Printf("start1 S%d\n", victim)
 			cfg.start1(victim, cfg.applierSnap)
 			cfg.connect(victim)
-			cfg.one(rand.Int(), servers, true)
+			cmd += 1
+			cfg.one(cmd, servers, true)
 			leader1 = cfg.checkOneLeader()
 		}
 	}
