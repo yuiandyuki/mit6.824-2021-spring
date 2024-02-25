@@ -152,6 +152,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	}
 	kv.kvMu.Lock()
 	val := kv.kv[args.Key]
+	kv.kvMu.Unlock()
 	kv.Debug("Get kv[%s]=%s", args.Key, val)
 	reply.Value, reply.Err = val, OK
 }
